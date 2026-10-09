@@ -1,0 +1,7 @@
+{
+  "name": "korzina-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Локальный дашборд покупок на Vue 3 и D3.js",
+  "scripts": { "dev": "python3 -m http.server 5173 --bind 127.0.0.1" }
+}
