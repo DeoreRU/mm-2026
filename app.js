@@ -170,7 +170,16 @@ createApp({
       g.selectAll('circle').data(observed).join('circle').attr('cx',d=>x(d.month)).attr('cy',d=>y(d.price)).attr('r',2.5).attr('fill','#edb787');
       const first=observed[0],last=observed.at(-1);
       const detail=document.createElement('div');detail.className='price-note';detail.textContent='После скидки: '+money(first.price)+(observed.length>1?' → '+money(last.price):' · один месяц с покупками');el.append(detail);
-      const legend=document.createElement('div');legend.className='price-note';legend.textContent='● После скидки   ┄ До скидки · ₽/шт.\nРазрывы — месяцы без покупок';el.append(legend);
+      const legend=document.createElement('div');legend.className='price-legend';
+      for(const [label,stroke,dashed] of [['Цена после скидки','#edb787',false],['Цена до скидки','#b5c6bd',true]]){
+        const item=document.createElement('div');item.className='price-legend-item';
+        const sample=d3.select(item).append('svg').attr('width',34).attr('height',14).attr('aria-hidden','true');
+        sample.append('line').attr('x1',1).attr('x2',33).attr('y1',7).attr('y2',7).attr('stroke',stroke).attr('stroke-width',dashed?1.5:2).attr('stroke-dasharray',dashed?'3 3':null);
+        if(!dashed)sample.append('circle').attr('cx',17).attr('cy',7).attr('r',3).attr('fill',stroke);
+        const caption=document.createElement('span');caption.textContent=label;item.append(caption);legend.append(item);
+      }
+      el.append(legend);
+      const note=document.createElement('div');note.className='price-note';note.textContent='Цены в ₽ за единицу товара. Разрывы — месяцы без покупок.';el.append(note);
       if(observed.length>1){const change=document.createElement('div');change.className='price-note';change.textContent=first.price?'Изменение между '+shortMonth(first.month)+' '+first.month.slice(0,4)+' и '+shortMonth(last.month)+' '+last.month.slice(0,4)+': '+(last.price>=first.price?'+':'')+decimal((last.price/first.price-1)*100)+'%':'Первая цена равна нулю; процент изменения не рассчитывается';el.append(change);}
       if(pin){
         productTipPinned=true;el.classList.add('pinned');
