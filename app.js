@@ -16,6 +16,7 @@ createApp({
   setup() {
     const rows = ref([]), loading = ref(true), error = ref('');
     const from = ref(''), to = ref(''), category = ref(''), status = ref('доставлен');
+    const kpiMode = ref('day');
     const metric = ref('spend'), productMetric = ref('quantity'), search = ref(''), selectedMonth = ref(''), page = ref(1);
     const trend = ref(null), categoryChart = ref(null), productChart = ref(null), kpiCharts = ref(null), tooltip = ref(null);
     const metrics = [{key:'orders', label:'Заказы'}, {key:'spend', label:'Траты'}, {key:'discountPct', label:'Скидка'}];
@@ -25,6 +26,7 @@ createApp({
     const color = name => categoryColors[categories.value.indexOf(name) % categoryColors.length] || categoryColors[0];
     const monthLabel = m => m ? new Date(m+'-01T12:00:00').toLocaleDateString('ru-RU',{month:'long',year:'numeric'}).replace(' г.','') : '';
     const shortMonth = m => new Date(m+'-01T12:00:00').toLocaleDateString('ru-RU',{month:'short'}).replace('.','');
+    const orderWord = n => n%100>=11&&n%100<=14?'заказов':n%10===1?'заказ':n%10>=2&&n%10<=4?'заказа':'заказов';
     const num = n => rub.format(n), decimal = n => dec.format(n), money = n => num(n)+' ₽';
     const compactMoney = n => n >= 1e6 ? decimal(n/1e6)+' млн' : n >= 10000 ? decimal(n/1000)+' тыс.' : num(n);
     const metricTitle = computed(() => ({orders:'Количество заказов',spend:'Сумма трат, ₽',discountPct:'Средняя скидка, %'})[metric.value]);
@@ -46,14 +48,28 @@ createApp({
     const filteredRows = computed(() => selectedMonth.value ? contextRows.value.filter(r=>r.month===selectedMonth.value) : contextRows.value);
     const summary = computed(() => summarize(filteredRows.value));
     const currentMonth = computed(() => selectedMonth.value || to.value);
-    const currentSummary = computed(() => summarize(contextRows.value.filter(r => r.month === currentMonth.value)));
-    const previousSummary = computed(() => summarize(rows.value.filter(r => r.month === monthOffset(currentMonth.value, -1) && (!category.value || r.category === category.value) && (!status.value || r.status === status.value))));
+    const currentDay = computed(() => {
+      const dates = rows.value.filter(r => r.month >= from.value && r.month <= to.value && (!selectedMonth.value || r.month === selectedMonth.value));
+      return dates.at(-1)?.order_date || '';
+    });
+    const dayLabel = date => date ? new Date(date + 'T12:00:00').toLocaleDateString('ru-RU', {day:'numeric',month:'long',year:'numeric'}) : 'Нет дат в выбранном периоде';
+    function dayOffset(date, offset) {
+      if (!date) return '';
+      const d = new Date(date + 'T12:00:00'); d.setDate(d.getDate() + offset);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    const currentSummary = computed(() => kpiMode.value === 'period' ? summary.value : summarize(contextRows.value.filter(r => kpiMode.value === 'day' ? r.order_date === currentDay.value : r.month === currentMonth.value)));
+    const previousSummary = computed(() => summarize(rows.value.filter(r => (kpiMode.value === 'day' ? r.order_date === dayOffset(currentDay.value, -1) : r.month === monthOffset(currentMonth.value, -1)) && (!category.value || r.category === category.value) && (!status.value || r.status === status.value))));
+    const kpiPeriodLabel = computed(() => kpiMode.value === 'period' ? 'За весь выбранный период: ' + periodLabel.value : kpiMode.value === 'day' ? 'Показатели дня: ' + dayLabel(currentDay.value) : 'Показатели месяца: ' + monthLabel(currentMonth.value));
     function changeLabel(key) {
+      if (kpiMode.value === 'period') return key === 'discountPct' ? 'Взвешенная средняя скидка за период' : 'Итог по всем датам выбранной выборки';
       const current = currentSummary.value[key], previous = previousSummary.value[key];
-      if (key === 'discountPct') return (current-previous>=0?'+':'') + decimal(current-previous) + ' п.п. к предыдущему месяцу';
-      if (!previous) return current ? 'Нет базы для сравнения с прошлым месяцем' : 'Без изменений к предыдущему месяцу';
+      const comparison = kpiMode.value === 'day' ? 'к предыдущему дню' : 'к предыдущему месяцу';
+      if (!previousSummary.value.orders) return kpiMode.value === 'day' ? 'В предыдущий день заказов не было' : 'В предыдущий месяц заказов не было';
+      if (key === 'discountPct') return (current-previous>=0?'+':'') + decimal(current-previous) + ' п.п. ' + comparison;
+      if (!previous) return current ? 'Нет базы для сравнения ' + comparison : 'Без изменений ' + comparison;
       const change = (current / previous - 1) * 100;
-      return (change >= 0 ? '+' : '') + decimal(change) + '% к предыдущему месяцу';
+      return (change >= 0 ? '+' : '') + decimal(change) + '% ' + comparison;
     }
     const monthCount = computed(() => selectedMonth.value ? 1 : Math.max(1,monthKeys.value.length));
     const periodLabel = computed(() => selectedMonth.value ? monthLabel(selectedMonth.value) : monthLabel(from.value)+' — '+monthLabel(to.value));
@@ -77,7 +93,7 @@ createApp({
       return ({'База':'🥣','Фрукты':'🍑','Овощи':'🥬','Вода':'💧','Напитки':'🧃','Готовая еда':'🍱','Сладости':'🍪','Снеки':'🥨','Товары для дома':'🧹','Аптека':'💊'})[c]||'🛒';
     };
     function setRange(mode) { from.value=mode==='all'?minMonth.value:mode==='24'?last24Start.value:last12Start.value; to.value=maxMonth.value; selectedMonth.value=''; }
-    function reset() { category.value=''; status.value='доставлен'; search.value=''; selectedMonth.value=''; metric.value='spend'; productMetric.value='quantity'; setRange('24'); }
+    function reset() { kpiMode.value='day'; category.value=''; status.value='доставлен'; search.value=''; selectedMonth.value=''; metric.value='spend'; productMetric.value='quantity'; setRange('24'); }
     let productTipPinned = false;
     function hideTip() { productTipPinned=false; if(tooltip.value){tooltip.value.style.display='none';tooltip.value.classList.remove('pinned');} }
     function showTip(event,title,lines) {
@@ -136,7 +152,7 @@ createApp({
         const y = d3.scaleLinear().domain([0,d3.max(monthly.value,d=>d[key])||1]).range([height-5,5]);
         const line = d3.line().x(d=>x(d.month)).y(d=>y(d[key]));
         svg.append('path').datum(monthly.value).attr('d',line).attr('stroke','#709f85').attr('stroke-width',1.8).attr('fill','none');
-        const current = monthly.value.find(d=>d.month===currentMonth.value);
+        const current = monthly.value.find(d=>d.month===(kpiMode.value==='day'?currentDay.value.slice(0,7):currentMonth.value));
         if(current) svg.append('circle').attr('cx',x(current.month)).attr('cy',y(current[key])).attr('r',3).attr('fill','#edae7b');
       }
     }
@@ -232,6 +248,7 @@ createApp({
     }
     watch([contextRows,selectedMonth,metric],()=>{page.value=1;hideTip();render();});
     watch([visibleProducts,productMetric],()=>{hideTip();nextTick(renderProducts);});
+    watch(kpiMode,()=>nextTick(renderSparklines));
     watch(pageCount,n=>{page.value=Math.min(page.value,n)});
     let observer;
     onMounted(async()=>{
@@ -247,6 +264,6 @@ createApp({
       }catch(e){error.value='Не удалось загрузить данные: '+e.message+'. Откройте дашборд через локальный сервер.';loading.value=false;}
     });
     onBeforeUnmount(()=>observer?.disconnect());
-    return {rows,loading,error,from,to,category,status,metric,productMetric,search,selectedMonth,page,metrics,minMonth,maxMonth,categories,color,monthLabel,num,decimal,money,compactMoney,metricTitle,rangeMode,monthKeys,summary,currentMonth,currentSummary,previousSummary,changeLabel,monthCount,periodLabel,categoryStats,productStats,goodsSpend,favorite,biggest,filteredProducts,pageCount,visibleProducts,maxProductOrders,emojiBg,emoji,setRange,reset,exportReport,trend,categoryChart,productChart,kpiCharts,tooltip,showProductTip,hideTip};
+    return {rows,loading,error,from,to,category,status,metric,productMetric,search,selectedMonth,page,metrics,minMonth,maxMonth,categories,color,monthLabel,orderWord,num,decimal,money,compactMoney,metricTitle,rangeMode,monthKeys,summary,kpiMode,kpiPeriodLabel,currentDay,dayLabel,currentMonth,currentSummary,previousSummary,changeLabel,monthCount,periodLabel,categoryStats,productStats,goodsSpend,favorite,biggest,filteredProducts,pageCount,visibleProducts,maxProductOrders,emojiBg,emoji,setRange,reset,exportReport,trend,categoryChart,productChart,kpiCharts,tooltip,showProductTip,hideTip};
   }
 }).mount('#app');
